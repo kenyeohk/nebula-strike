@@ -164,33 +164,75 @@ const sfx = {
   tractor: () => { tone('sine', 220, 660, 2.2, 0.1); tone('triangle', 330, 990, 2.2, 0.05); },
 };
 
-// ---------- Background ----------
-let stars = [], starBoost = 1;
+// ---------- Background: neon grid, coloured nebulae, drifting wireframes ----------
+// Each sector (5 waves) gets its own colour scheme
+const THEMES = [
+  { grid: '0,229,255',   a: '255,60,200', b: '40,110,255' },
+  { grid: '190,90,255',  a: '0,200,255',  b: '255,80,160' },
+  { grid: '60,255,170',  a: '20,140,255', b: '160,60,255' },
+  { grid: '255,170,40',  a: '255,60,140', b: '120,40,255' },
+  { grid: '255,80,220',  a: '60,220,255', b: '255,150,40' },
+];
+const theme = () => THEMES[(Math.max(1, Math.ceil(wave / 5)) - 1) % THEMES.length];
+let stars = [], deco = [], starBoost = 1, gridScroll = 0;
 function makeStars() {
   stars = [];
   for (let i = 0; i < 150; i++) {
     const l = i % 3;
     stars.push({ x: Math.random() * W, y: Math.random() * H, l, s: [0.7, 1.1, 1.7][l], v: [14, 36, 85][l], tw: Math.random() * TAU });
   }
+  deco = [];
+  for (let i = 0; i < 6; i++) deco.push({ x: Math.random() * W, y: Math.random() * H, r: rand(18, 46), n: 3 + (i % 4), rot: Math.random() * TAU, spin: rand(-0.4, 0.4), v: rand(8, 22) });
 }
 function updateStars(dt) {
   for (const s of stars) {
     s.y += s.v * dt * starBoost;
     if (s.y > H) { s.y -= H + 2; s.x = Math.random() * W; }
   }
+  for (const d of deco) {
+    d.y += d.v * dt * starBoost; d.rot += d.spin * dt;
+    if (d.y - d.r > H) { d.y = -d.r - rand(0, 200); d.x = Math.random() * W; }
+  }
+  gridScroll = (gridScroll + dt * 0.55 * starBoost) % 1;
 }
 function drawBackground() {
-  const n1y = (clock * 6) % (H + 400) - 200;
-  let g = ctx.createRadialGradient(W * 0.25, n1y, 10, W * 0.25, n1y, 220);
-  g.addColorStop(0, 'rgba(90,40,140,0.22)'); g.addColorStop(1, 'rgba(90,40,140,0)');
-  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-  const n2y = ((clock * 4) + H * 0.6) % (H + 400) - 200;
-  g = ctx.createRadialGradient(W * 0.8, n2y, 10, W * 0.8, n2y, 200);
-  g.addColorStop(0, 'rgba(20,90,140,0.2)'); g.addColorStop(1, 'rgba(20,90,140,0)');
-  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  const th = theme();
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#03010c'); bg.addColorStop(0.5, '#070214'); bg.addColorStop(1, '#0b0320');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+  // nebula clouds drifting down
+  const n1y = (clock * 6) % (H + 400) - 200, n2y = ((clock * 4) + H * 0.6) % (H + 400) - 200;
+  for (const [x, y, r, c] of [[W * 0.2, n1y, 250, th.a], [W * 0.85, n2y, 230, th.b]]) {
+    const g = ctx.createRadialGradient(x, y, 8, x, y, r);
+    g.addColorStop(0, `rgba(${c},0.26)`); g.addColorStop(0.45, `rgba(${c},0.08)`); g.addColorStop(1, `rgba(${c},0)`);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  }
+  // perspective grid floor rushing towards you
+  const hy = H * 0.4, depth = H - hy, vx = W / 2;
+  const hg = ctx.createLinearGradient(0, hy - 30, 0, hy + 30);
+  hg.addColorStop(0, `rgba(${th.grid},0)`); hg.addColorStop(0.5, `rgba(${th.grid},0.16)`); hg.addColorStop(1, `rgba(${th.grid},0)`);
+  ctx.fillStyle = hg; ctx.fillRect(0, hy - 30, W, 60);
+  ctx.lineWidth = 1;
+  for (let i = -9; i <= 9; i++) {
+    const g = ctx.createLinearGradient(0, hy, 0, H);
+    g.addColorStop(0, `rgba(${th.grid},0)`); g.addColorStop(1, `rgba(${th.grid},0.22)`);
+    ctx.strokeStyle = g; ctx.beginPath(); ctx.moveTo(vx + i * 6, hy); ctx.lineTo(vx + i * 62, H); ctx.stroke();
+  }
+  for (let k = 0; k < 12; k++) {
+    const z = ((k + gridScroll) / 12), y = hy + depth * z * z;
+    ctx.strokeStyle = `rgba(${th.grid},${0.03 + z * 0.2})`;
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+  // faint wireframe shapes drifting past
+  ctx.lineWidth = 1;
+  for (const d of deco) {
+    ctx.beginPath();
+    for (let i = 0; i < d.n; i++) { const a = d.rot + i * TAU / d.n; ctx.lineTo(d.x + Math.cos(a) * d.r, d.y + Math.sin(a) * d.r); }
+    ctx.closePath(); ctx.strokeStyle = `rgba(${th.a},0.14)`; ctx.stroke();
+  }
   for (const s of stars) {
     const a = s.l === 2 ? 0.9 : (0.35 + 0.35 * Math.sin(clock * 2 + s.tw)) + s.l * 0.15;
-    ctx.fillStyle = s.l === 2 ? `rgba(220,235,255,${a})` : `rgba(180,200,255,${a})`;
+    ctx.fillStyle = s.l === 2 ? `rgba(230,240,255,${a})` : `rgba(180,200,255,${a})`;
     const len = s.l === 2 ? s.s * (1 + (starBoost - 1) * 6) : s.s;
     ctx.fillRect(s.x, s.y, s.s, len);
   }
@@ -214,16 +256,17 @@ function drawFreighter(x, y, s, t) {
   g.addColorStop(0, 'rgba(210,240,255,0.95)'); g.addColorStop(0.35, 'rgba(90,170,255,0.7)'); g.addColorStop(1, 'rgba(40,90,255,0)');
   ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(0, 13, 15, 7 + fl, 0, 0, TAU); ctx.fill();
   ctx.lineWidth = 0.8; ctx.strokeStyle = '#5a6068';
-  ctx.fillStyle = '#b4b9c0';
+  ctx.fillStyle = '#868d96';
   for (const sd of [-1, 1]) {
     ctx.beginPath();
     ctx.moveTo(sd * 10, -5); ctx.lineTo(sd * 8.5, -22); ctx.lineTo(sd * 2.6, -22); ctx.lineTo(sd * 2.2, -8);
-    ctx.closePath(); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = '#8b9199'; ctx.fillRect(sd > 0 ? 4 : -7, -18, 3, 2); ctx.fillStyle = '#b4b9c0';
+    ctx.closePath(); ctx.fill(); neon('#7fe0ff', 0.7);
+    ctx.fillStyle = '#5d646d'; ctx.fillRect(sd > 0 ? 4 : -7, -18, 3, 2); ctx.fillStyle = '#868d96';
   }
+  ctx.strokeStyle = '#5a6068'; ctx.lineWidth = 0.8;
   ctx.beginPath(); ctx.arc(0, 0, 13.5, 0, TAU);
   const hg = ctx.createLinearGradient(-13, -13, 13, 13);
-  hg.addColorStop(0, '#e2e5ea'); hg.addColorStop(1, '#9ca2aa');
+  hg.addColorStop(0, '#a9b0b9'); hg.addColorStop(1, '#5d646d');
   ctx.fillStyle = hg; ctx.fill(); ctx.stroke();
   ctx.strokeStyle = '#cfefff'; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.arc(0, 0, 12.6, Math.PI * 0.22, Math.PI * 0.78); ctx.stroke();
@@ -240,41 +283,42 @@ function drawFreighter(x, y, s, t) {
   ctx.beginPath(); ctx.moveTo(9, -5); ctx.lineTo(14, -10); ctx.lineTo(15.5, -8.2); ctx.lineTo(11, -2.5); ctx.closePath(); ctx.fill(); ctx.stroke();
   ctx.beginPath(); ctx.arc(15.2, -11, 3.3, 0, TAU); ctx.fill(); ctx.stroke();
   ctx.fillStyle = '#28394a'; ctx.beginPath(); ctx.arc(15.6, -12, 1.6, 0, TAU); ctx.fill();
+  // neon rim so the ship pops against the glowing scenery
+  ctx.beginPath(); ctx.arc(0, 0, 13.8, 0, TAU); neon('#7fe0ff', 0.9);
+  glow(15.6, -12, 2.5, 'rgba(160,240,255,1)', 'rgba(80,200,255,0)');
   ctx.restore();
 }
 
 // Twin-panel interceptor: ball cockpit between two hexagonal wing panels
 function drawInter(t) {
-  ctx.fillStyle = '#646c75'; ctx.fillRect(-11, -1.6, 22, 3.2);
+  const c = '#38e1ff';
+  ctx.beginPath(); ctx.rect(-11, -1.6, 22, 3.2); ctx.fillStyle = '#0c1826'; ctx.fill(); neon(c, 0.7);
   for (const s of [-1, 1]) {
     ctx.save(); ctx.translate(s * 12.5, 0);
     ctx.beginPath();
     for (let i = 0; i < 6; i++) { const a = i * TAU / 6 + Math.PI / 2; ctx.lineTo(Math.cos(a) * 6.2, Math.sin(a) * 11.5); }
-    ctx.closePath(); ctx.fillStyle = '#242a31'; ctx.fill();
-    ctx.strokeStyle = '#a0aab4'; ctx.lineWidth = 1.3; ctx.stroke();
+    ctx.closePath(); ctx.fillStyle = '#060e1a'; ctx.fill(); neon(c, 1.3);
     ctx.beginPath();
     for (let i = 0; i < 6; i++) { const a = i * TAU / 6 + Math.PI / 2; ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * 6.2, Math.sin(a) * 11.5); }
-    ctx.strokeStyle = 'rgba(160,170,180,0.45)'; ctx.lineWidth = 0.6; ctx.stroke();
+    ctx.strokeStyle = 'rgba(56,225,255,0.4)'; ctx.lineWidth = 0.6; ctx.stroke();
     ctx.restore();
   }
-  ctx.beginPath(); ctx.arc(0, 0, 5.8, 0, TAU); ctx.fillStyle = '#a9b2bc'; ctx.fill();
-  ctx.strokeStyle = '#5b636c'; ctx.lineWidth = 0.8; ctx.stroke();
-  ctx.beginPath(); ctx.arc(0, 0.6, 3.1, 0, TAU); ctx.fillStyle = '#121d26'; ctx.fill();
-  ctx.strokeStyle = 'rgba(120,255,160,0.75)'; ctx.lineWidth = 0.5;
-  ctx.beginPath(); for (let i = 0; i < 4; i++) { const a = i * Math.PI / 4; ctx.moveTo(Math.cos(a) * 3, 0.6 + Math.sin(a) * 3); ctx.lineTo(-Math.cos(a) * 3, 0.6 - Math.sin(a) * 3); } ctx.stroke();
+  ctx.beginPath(); ctx.arc(0, 0, 5.8, 0, TAU); ctx.fillStyle = '#0c1826'; ctx.fill(); neon('#a8f4ff', 1);
+  glow(0, 0.6, 5, 'rgba(120,255,170,1)', 'rgba(0,255,120,0)');
 }
 
 // Wedge destroyer: dagger-shaped capital ship with a bridge tower
 function drawWedge(t, e) {
-  for (const x of [-7, 0, 7]) glow(x, -12, 3.6, 'rgba(170,220,255,0.95)', 'rgba(60,120,255,0)');
+  for (const x of [-7, 0, 7]) glow(x, -12, 4.5, 'rgba(140,210,255,1)', 'rgba(60,120,255,0)');
   ctx.beginPath(); ctx.moveTo(0, 17); ctx.lineTo(-13.5, -11); ctx.lineTo(13.5, -11); ctx.closePath();
-  ctx.fillStyle = '#d6d9de'; ctx.fill(); ctx.strokeStyle = '#6b7179'; ctx.lineWidth = 0.8; ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(0, 17); ctx.lineTo(13.5, -11); ctx.lineTo(0, -11); ctx.closePath();
-  ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fill();
-  ctx.strokeStyle = 'rgba(90,96,104,0.75)'; ctx.lineWidth = 0.6;
+  const g = ctx.createLinearGradient(-13, 0, 13, 0);
+  g.addColorStop(0, '#1c140a'); g.addColorStop(0.5, '#2e2212'); g.addColorStop(1, '#120c06');
+  ctx.fillStyle = g; ctx.fill(); neon('#ffb238', 1.3);
+  ctx.strokeStyle = 'rgba(255,178,56,0.45)'; ctx.lineWidth = 0.7;
   ctx.beginPath(); ctx.moveTo(0, 15); ctx.lineTo(0, -11); ctx.moveTo(-9, -3); ctx.lineTo(9, -3); ctx.moveTo(-5, 5); ctx.lineTo(5, 5); ctx.stroke();
-  ctx.fillStyle = '#b8bcc2'; ctx.fillRect(-4.5, -15, 9, 6); ctx.fillRect(-2, -18, 4, 3);
-  ctx.beginPath(); ctx.arc(-3.2, -18.3, 1.4, 0, TAU); ctx.arc(3.2, -18.3, 1.4, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.rect(-4.5, -15, 9, 6); ctx.rect(-2, -18, 4, 3); ctx.fillStyle = '#2e2212'; ctx.fill(); neon('#ffe07a', 0.8);
+  glow(-3.2, -18.3, 2, 'rgba(255,240,170,1)', 'rgba(255,180,0,0)'); glow(3.2, -18.3, 2, 'rgba(255,240,170,1)', 'rgba(255,180,0,0)');
+  glow(0, 11, 3, 'rgba(255,220,120,1)', 'rgba(255,150,0,0)');
   if (e && e.hp < e.maxHp) { // damage sparks
     glow(-5 + Math.sin(t * 13) * 2, 2, 3, 'rgba(255,190,90,0.9)', 'rgba(255,90,30,0)');
     if (e.hp <= e.maxHp / 2) glow(5, -4 + Math.sin(t * 11) * 2, 3, 'rgba(255,190,90,0.9)', 'rgba(255,90,30,0)');
@@ -283,41 +327,41 @@ function drawWedge(t, e) {
 
 // Crescent raider: curved wing body with a sweeping red scanner eye
 function drawRaider(t) {
-  glow(-6, -9, 3, 'rgba(255,140,90,0.8)', 'rgba(255,60,30,0)');
-  glow(6, -9, 3, 'rgba(255,140,90,0.8)', 'rgba(255,60,30,0)');
+  glow(-6, -9, 4, 'rgba(255,130,160,0.95)', 'rgba(255,40,90,0)');
+  glow(6, -9, 4, 'rgba(255,130,160,0.95)', 'rgba(255,40,90,0)');
   ctx.beginPath();
   ctx.moveTo(-16, 10); ctx.quadraticCurveTo(-13, -12, 0, -12); ctx.quadraticCurveTo(13, -12, 16, 10);
   ctx.quadraticCurveTo(11, 1, 6, 1); ctx.lineTo(0, 7); ctx.lineTo(-6, 1); ctx.quadraticCurveTo(-11, 1, -16, 10);
   ctx.closePath();
-  const g = ctx.createLinearGradient(0, -12, 0, 10); g.addColorStop(0, '#b2b6bb'); g.addColorStop(1, '#5b5f64');
-  ctx.fillStyle = g; ctx.fill(); ctx.strokeStyle = '#34373b'; ctx.lineWidth = 0.8; ctx.stroke();
-  ctx.beginPath(); ctx.ellipse(0, 1, 5.6, 6.2, 0, 0, TAU); ctx.fillStyle = '#7b8086'; ctx.fill(); ctx.stroke();
-  ctx.fillStyle = '#1a0505'; ctx.fillRect(-4.6, 3.6, 9.2, 2.4);
+  const g = ctx.createLinearGradient(0, -12, 0, 10); g.addColorStop(0, '#2a0f18'); g.addColorStop(1, '#10050a');
+  ctx.fillStyle = g; ctx.fill(); neon('#ff3b5c', 1.3);
+  ctx.beginPath(); ctx.ellipse(0, 1, 5.6, 6.2, 0, 0, TAU); ctx.fillStyle = '#1e0a10'; ctx.fill(); neon('#ff8a9a', 0.9);
+  ctx.fillStyle = '#000'; ctx.fillRect(-4.6, 3.6, 9.2, 2.4);
   const ex = Math.sin(t * 5) * 3.4;
-  glow(ex, 4.8, 4.5, 'rgba(255,60,40,1)', 'rgba(255,0,0,0)');
+  glow(ex, 4.8, 5.5, 'rgba(255,60,40,1)', 'rgba(255,0,0,0)');
 }
 
 // Raptor warbird: forward head on a long neck, swept wings with tip cannons
 function drawBird(t) {
-  glow(0, -11, 4, 'rgba(255,110,80,0.9)', 'rgba(255,40,20,0)');
+  glow(0, -11, 5, 'rgba(255,170,80,0.95)', 'rgba(255,90,20,0)');
+  const c = '#7dff4a';
   for (const s of [-1, 1]) {
     ctx.beginPath(); ctx.moveTo(s * 3, -8); ctx.lineTo(s * 17.5, 1); ctx.lineTo(s * 17.5, 7); ctx.lineTo(s * 13, 5); ctx.lineTo(s * 3, 1); ctx.closePath();
-    ctx.fillStyle = '#4b6846'; ctx.fill(); ctx.strokeStyle = '#a9c4a2'; ctx.lineWidth = 0.9; ctx.stroke();
-    ctx.fillStyle = '#c3d0be'; ctx.fillRect(s * 17.5 - 1, 6, 2, 6);
-    ctx.strokeStyle = 'rgba(169,196,162,0.5)'; ctx.lineWidth = 0.5;
+    ctx.fillStyle = '#0b1a08'; ctx.fill(); neon(c, 1.1);
+    glow(s * 17.5, 11, 2.5, 'rgba(220,255,160,1)', 'rgba(120,255,60,0)');
+    ctx.strokeStyle = 'rgba(125,255,74,0.45)'; ctx.lineWidth = 0.5;
     ctx.beginPath(); ctx.moveTo(s * 5, -4); ctx.lineTo(s * 15, 2.5); ctx.stroke();
   }
-  ctx.beginPath(); ctx.ellipse(0, -5, 5.6, 6.6, 0, 0, TAU); ctx.fillStyle = '#5d7d57'; ctx.fill(); ctx.strokeStyle = '#a9c4a2'; ctx.lineWidth = 0.8; ctx.stroke();
-  ctx.fillStyle = '#6f8e68'; ctx.fillRect(-1.7, 0, 3.4, 9);
-  ctx.beginPath(); ctx.ellipse(0, 11, 4.4, 3.3, 0, 0, TAU); ctx.fillStyle = '#80a178'; ctx.fill(); ctx.stroke();
-  ctx.fillStyle = '#ff6a40'; ctx.fillRect(-1.8, 11.5, 3.6, 1.3);
+  ctx.beginPath(); ctx.ellipse(0, -5, 5.6, 6.6, 0, 0, TAU); ctx.fillStyle = '#0f220b'; ctx.fill(); neon(c, 1);
+  ctx.beginPath(); ctx.rect(-1.7, 0, 3.4, 9); ctx.fillStyle = '#0f220b'; ctx.fill(); neon(c, 0.7);
+  ctx.beginPath(); ctx.ellipse(0, 11, 4.4, 3.3, 0, 0, TAU); ctx.fillStyle = '#0f220b'; ctx.fill(); neon('#c8ff8a', 1);
+  glow(0, 12, 3, 'rgba(255,120,60,1)', 'rgba(255,60,0,0)');
 }
 
 // Hive drone: small spinning gridded cube launched by the Hive Cube
 function drawDrone(t) {
   ctx.save(); ctx.rotate(t * 1.5);
-  ctx.fillStyle = '#1d241d'; ctx.strokeStyle = '#5dff7a'; ctx.lineWidth = 1;
-  ctx.fillRect(-7.5, -7.5, 15, 15); ctx.strokeRect(-7.5, -7.5, 15, 15);
+  ctx.beginPath(); ctx.rect(-7.5, -7.5, 15, 15); ctx.fillStyle = '#081a0c'; ctx.fill(); neon('#5dff7a', 1.2);
   ctx.strokeStyle = 'rgba(93,255,122,0.5)';
   ctx.beginPath(); ctx.moveTo(-7.5, 0); ctx.lineTo(7.5, 0); ctx.moveTo(0, -7.5); ctx.lineTo(0, 7.5); ctx.stroke();
   ctx.restore();
@@ -325,11 +369,11 @@ function drawDrone(t) {
 }
 
 const TYPES = {
-  inter:  { hp: 1, score: 50,  dive: 100, r: 13, draw: drawInter,  name: 'Twin-Panel Interceptor', colors: ['#fff', '#9fe8a0', '#6a747e', '#ffcc66'] },
-  raider: { hp: 1, score: 80,  dive: 160, r: 13, draw: drawRaider, name: 'Crescent Raider',        colors: ['#fff', '#ff5a4a', '#ffb27a', '#9aa0a6'] },
-  bird:   { hp: 1, score: 100, dive: 200, r: 13, draw: drawBird,   name: 'Raptor Warbird',         colors: ['#fff', '#b8ff9a', '#ffb04a', '#5f7d58'] },
-  wedge:  { hp: 3, score: 150, dive: 400, r: 14, draw: drawWedge,  name: 'Wedge Destroyer',        colors: ['#fff', '#ffd27a', '#ff8a3a', '#c8ccd2'] },
-  drone:  { hp: 2, score: 60,  dive: 120, r: 10, draw: drawDrone,  name: 'Hive Drone',             colors: ['#fff', '#7dff8a', '#3a4a3a', '#b0ffb0'] },
+  inter:  { hp: 1, score: 50,  dive: 100, r: 13, draw: drawInter,  name: 'Twin-Panel Interceptor', colors: ['#fff', '#38e1ff', '#9af0ff', '#2a7bff'] },
+  raider: { hp: 1, score: 80,  dive: 160, r: 13, draw: drawRaider, name: 'Crescent Raider',        colors: ['#fff', '#ff3b5c', '#ff9aa8', '#ff2a8a'] },
+  bird:   { hp: 1, score: 100, dive: 200, r: 13, draw: drawBird,   name: 'Raptor Warbird',         colors: ['#fff', '#7dff4a', '#d0ff8a', '#2aff9a'] },
+  wedge:  { hp: 3, score: 150, dive: 400, r: 14, draw: drawWedge,  name: 'Wedge Destroyer',        colors: ['#fff', '#ffb238', '#ffe07a', '#ff6a2a'] },
+  drone:  { hp: 2, score: 60,  dive: 120, r: 10, draw: drawDrone,  name: 'Hive Drone',             colors: ['#fff', '#5dff7a', '#b0ffb0', '#2affd0'] },
 };
 function drawEnemy(e) {
   ctx.save(); ctx.translate(e.x, e.y); ctx.rotate(e.rot);
@@ -1085,9 +1129,12 @@ function continueGame() {
 function explode(x, y, colors, count, speed) {
   for (let i = 0; i < count; i++) {
     const a = Math.random() * TAU, v = rand(0.2, 1) * speed;
-    particles.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: rand(0.35, 0.9), max: 0.9, c: colors[(Math.random() * colors.length) | 0], s: rand(1.2, 3) });
+    particles.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: rand(0.35, 0.9), max: 0.9, c: colors[(Math.random() * colors.length) | 0], s: rand(1.2, 2.6) });
   }
-  particles.push({ ring: true, x, y, life: 0.35, max: 0.35, r: speed * 0.12 });
+  const c = colors[1] || colors[0];
+  particles.push({ ring: true, x, y, life: 0.4, max: 0.4, r: speed * 0.12, c });
+  particles.push({ flash: true, x, y, vx: 0, vy: 0, life: 0.22, max: 0.22, r: 10 + speed * 0.12, c });
+  if (particles.length > 700) particles.splice(0, particles.length - 700);
 }
 function shake(t, m) { shakeT = Math.max(shakeT, t); shakeMag = Math.max(shakeMag, m); }
 function popup(x, y, txt, col = '#7fe0ff') { popups.push({ x, y, txt, life: 1, col }); }
@@ -1880,6 +1927,9 @@ function update(dt) {
       else { e.x += dx / d * step; e.y += dy / d * step; }
     } else { e.x = sp.x; e.y = sp.y; }
 
+    if (teleported) e.tr = null;
+    else if (e.state === 'enter' || e.state === 'dive' || e.state === 'home') { (e.tr = e.tr || []).unshift({ x: e.x, y: e.y }); if (e.tr.length > 8) e.tr.length = 8; }
+    else if (e.tr && e.tr.length) e.tr.pop();
     if (!teleported) {
       const mx = e.x - ox0, my = e.y - oy0;
       const target = e.state === 'form' ? 0 : (mx * mx + my * my > 0.0001 ? Math.atan2(my, mx) - Math.PI / 2 : e.rot);
@@ -2055,6 +2105,34 @@ const bombBtn = () => ({ x: W - 32, y: H - safe.b - 32 });
 const BULLET_COL = [null, ['rgba(255,60,50,0.55)', '#ffe0d8'], ['rgba(255,60,50,0.55)', '#ffe0d8'], ['rgba(255,120,40,0.6)', '#fff0d8'],
   ['rgba(255,200,40,0.6)', '#fff8d8'], ['rgba(80,220,255,0.65)', '#effcff']];
 
+// ---------- Glow ("bloom"): a blurred copy of the bright parts is added back on top ----------
+// The frame is shrunk step by step (each halving blurs it a little), its brightness is
+// squared so only bright things survive, and the small copies are stretched back over
+// the screen with additive blending.
+const bloomLv = [2, 4, 8, 16].map(f => { const c = document.createElement('canvas'); return { f, c, x: c.getContext('2d') }; });
+let glowOn = true, slowFrames = 0;
+function applyBloom() {
+  if (!glowOn) return;
+  let src = cv;
+  for (const L of bloomLv) {
+    const w = Math.max(1, Math.round(cv.width / L.f)), h = Math.max(1, Math.round(cv.height / L.f));
+    if (L.c.width !== w || L.c.height !== h) { L.c.width = w; L.c.height = h; }
+    L.x.globalCompositeOperation = 'copy'; L.x.drawImage(src, 0, 0, w, h);
+    if (L.f === 2) { L.x.globalCompositeOperation = 'multiply'; L.x.drawImage(L.c, 0, 0); }
+    src = L.c;
+  }
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = 0.5; ctx.drawImage(bloomLv[2].c, 0, 0, cv.width, cv.height);
+  ctx.globalAlpha = 0.6; ctx.drawImage(bloomLv[3].c, 0, 0, cv.width, cv.height);
+  ctx.restore();
+}
+function postFx() {
+  applyBloom();
+  const g = ctx.createRadialGradient(W / 2, H * 0.45, H * 0.3, W / 2, H * 0.45, H * 0.75);
+  g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,6,0.55)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+}
+
 function render() {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = '#000008'; ctx.fillRect(0, 0, cv.width, cv.height);
@@ -2064,12 +2142,13 @@ function render() {
   ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip();
   drawBackground();
 
-  if (state === 'title') { drawTitle(); ctx.restore(); return; }
-  if (state === 'hangar') { drawHangar(); ctx.restore(); return; }
+  if (state === 'title') { drawTitle(); postFx(); ctx.restore(); return; }
+  if (state === 'hangar') { postFx(); drawHangar(); ctx.restore(); return; }
 
   drawOutposts();
   drawHoles();
   drawTrails();
+  drawEnemyTrails();
   // ram warning column
   if (boss && boss.ram && boss.ram.stage === 'warn') {
     ctx.fillStyle = `rgba(255,40,40,${0.12 + 0.1 * Math.sin(clock * 25)})`; ctx.fillRect(boss.ram.x - 75, 0, 150, H);
@@ -2088,9 +2167,10 @@ function render() {
   drawTractor();
   drawHazards();
   // enemy bolts: always red so they never blend in with the white stars
+  ctx.globalCompositeOperation = 'lighter';
   for (const b of ebullets) {
     const r = (b.r || 1.9) + 0.4;
-    ctx.globalAlpha = 0.6; glow(b.x, b.y, r * 3.4, '#ff2a1a', 'rgba(0,0,0,0)'); ctx.globalAlpha = 1;
+    ctx.globalAlpha = 0.7; glow(b.x, b.y, r * 3.6, '#ff2a1a', 'rgba(0,0,0,0)'); ctx.globalAlpha = 1;
     ctx.fillStyle = '#ff3b2a'; ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, TAU); ctx.fill();
     ctx.fillStyle = '#ffa090'; ctx.beginPath(); ctx.arc(b.x, b.y, r * 0.45, 0, TAU); ctx.fill();
   }
@@ -2120,6 +2200,7 @@ function render() {
     ctx.beginPath(); ctx.moveTo(player.x, player.y - 22); ctx.lineTo(player.x, top); ctx.stroke();
     if (top > 0) glow(player.x, top, 12, 'rgba(200,245,255,0.9)', 'rgba(80,200,255,0)');
   }
+  ctx.globalCompositeOperation = 'source-over';
   if (player.alive && (player.inv <= 0 || Math.floor(clock * 12) % 2 === 0)) {
     drawFreighter(player.x, player.y, 1, clock);
     if (player.shield) {
@@ -2127,13 +2208,22 @@ function render() {
       ctx.beginPath(); ctx.arc(player.x, player.y - 3, 25, 0, TAU); ctx.stroke();
     }
   }
+  // sparks: additive glowing streaks, shockwave rings and a flash at the centre
+  ctx.globalCompositeOperation = 'lighter'; ctx.lineCap = 'round';
   for (const p of particles) {
-    const a = p.life / p.max;
+    const a = Math.max(0, p.life / p.max);
+    ctx.globalAlpha = a;
     if (p.ring) {
-      ctx.strokeStyle = `rgba(255,230,200,${a})`; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (1 + (1 - a) * 3), 0, TAU); ctx.stroke();
-    } else { ctx.globalAlpha = a; ctx.fillStyle = p.c; ctx.fillRect(p.x - p.s / 2, p.y - p.s / 2, p.s, p.s); ctx.globalAlpha = 1; }
+      ctx.strokeStyle = p.c || '#ffe6c8'; ctx.lineWidth = 1 + a * 3;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (1 + (1 - a) * 3.5), 0, TAU); ctx.stroke();
+    } else if (p.flash) {
+      glow(p.x, p.y, p.r * (0.6 + (1 - a)), p.c, 'rgba(0,0,0,0)');
+    } else {
+      ctx.strokeStyle = p.c; ctx.lineWidth = p.s;
+      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.vx * 0.045, p.y - p.vy * 0.045); ctx.stroke();
+    }
   }
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
   if (bombRing) {
     const k = bombRing.t / 0.7;
     ctx.strokeStyle = `rgba(255,120,160,${1 - k})`; ctx.lineWidth = 10 * (1 - k) + 2;
@@ -2142,6 +2232,7 @@ function render() {
   if (flashT > 0) { ctx.fillStyle = `rgba(255,255,255,${flashT * 1.6})`; ctx.fillRect(0, 0, W, H); }
   for (const p of popups) { ctx.globalAlpha = Math.min(1, p.life * 2); text(p.txt, p.x, p.y, 11, p.col); ctx.globalAlpha = 1; }
 
+  postFx();
   drawHud();
   if (bannerT > 0) {
     ctx.globalAlpha = Math.min(1, bannerT * 2);
@@ -2156,6 +2247,20 @@ function render() {
   ctx.restore();
 }
 
+function drawEnemyTrails() {   // fading neon streaks behind swooping enemies
+  ctx.globalCompositeOperation = 'lighter'; ctx.lineCap = 'round';
+  for (const e of enemies) {
+    const tr = e.tr;
+    if (!tr || tr.length < 2) continue;
+    ctx.strokeStyle = TYPES[e.type].colors[1];
+    for (let i = 1; i < tr.length; i++) {
+      const k = 1 - i / tr.length;
+      ctx.globalAlpha = k * 0.45; ctx.lineWidth = k * 7;
+      ctx.beginPath(); ctx.moveTo(tr[i - 1].x, tr[i - 1].y); ctx.lineTo(tr[i].x, tr[i].y); ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+}
 function drawHoles() {
   for (const h of holes) {
     if (h.t < h.warn) {
@@ -2319,7 +2424,7 @@ function drawPower(p) {
   ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(Math.sin(clock * 3) * 0.3);
   glow(0, 0, p.k === 'B' ? 22 : 16, col + '66', col + '00');
   ctx.beginPath(); for (let i = 0; i < 6; i++) { const a = i * TAU / 6; ctx.lineTo(Math.cos(a) * 10, Math.sin(a) * 10); } ctx.closePath();
-  ctx.fillStyle = 'rgba(0,0,10,0.7)'; ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = 'rgba(0,0,10,0.7)'; ctx.fill(); neon(col, 2);
   ctx.restore();
   text(p.k, p.x, p.y + 1, 11, col);
 }
@@ -2628,7 +2733,10 @@ function frame(now) {
   if (state === 'play' && !paused) update(dt);
   else if (state === 'over') { overT += dt; T += dt; updateStars(dt); updateFx(dt); }
   else if (state === 'title' || state === 'hangar') { starBoost = 1; updateStars(dt); }
+  const t0 = performance.now();
   render();
+  // if drawing the glow is too slow for this phone, switch it off rather than stutter
+  if (glowOn && !document.hidden) { slowFrames = performance.now() - t0 > 12 ? slowFrames + 1 : Math.max(0, slowFrames - 1); if (slowFrames > 60) glowOn = false; }
   requestAnimationFrame(frame);
 }
 D = diff(1);
@@ -2641,7 +2749,7 @@ if ('serviceWorker' in navigator && window.isSecureContext) navigator.serviceWor
 // The Pi's simple web server sends no cache headers, so the iPhone home-screen app
 // can keep an old copy. On launch (and when reopened) ask for version.json, bypassing
 // the cache; if it names a newer build, refresh the cached page and reload it.
-const BUILD = '2026-11-21a';
+const BUILD = '2026-11-23a';
 async function checkForUpdate() {
   if (state === 'play' && !paused) return;            // never interrupt a game
   try {
